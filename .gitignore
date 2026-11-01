@@ -1,0 +1,20 @@
+# Virtual environments
+.venv/
+venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# IDE settings
+.vscode/
+.idea/
+
+# Environment variables
+.env
+
+# Logs and scan results
+*.log
+scan_results/
+*.json
+*.csv

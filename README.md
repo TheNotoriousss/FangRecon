@@ -44,13 +44,13 @@ pip install -r requirements.txt
 Scan a target network:
 
 ```bash
-sudo .venv/bin/python network_scanner.py -t 192.168.1.0/24
+sudo .venv/bin/python network_scanner.py -ip 192.168.1.0/24
 ```
 
 Specify a network interface:
 
 ```bash
-sudo .venv/bin/python network_scanner.py -t 192.168.1.0/24 -i eth0
+sudo .venv/bin/python network_scanner.py -ip 192.168.1.0/24 -in eth0
 ```
 
 ## Project Status

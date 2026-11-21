@@ -1,9 +1,9 @@
-
 import socket
 import errno
 import argparse
 from pathlib import Path
-
+from port_utils import parse_ports
+from udp_scanner import udp_scan
 from service_detection.http import http_service_detection
 from service_detection.https import https_service_detection
 from service_detection.ssh import ssh_service_detection
@@ -40,100 +40,15 @@ def get_arguments():
 
     parser = argparse.ArgumentParser()
 
-    parser.add_argument(
-        "-x", "--target",
-        dest="target",
-        help="Target IP address or hostname",
-        required=True
-    )
+    parser.add_argument("-x", "--target", dest="target", help="Target IP address or hostname", required=True)
 
-    parser.add_argument(
-        "-p", "--port",
-        dest="port",
-        type=str,
-        help="Ports to scan (example: 22,80,443 or 1-100)",
-        default=None
-    )
+    parser.add_argument("-p", "--port", dest="port", type=str, help="Ports to scan (example: 22,80,443 or 1-100)", default=None)
 
-    parser.add_argument(
-        "-t", "--timeout",
-        dest="timeout",
-        type=float,
-        help="Connection timeout",
-        default=2
-    )
+    parser.add_argument("-t", "--timeout", dest="timeout", type=float, help="Connection timeout", default=2)
+
+    parser.add_argument("-s", choices=["T", "U"], default="T", dest="scan_type",metavar="TYPE",help="Scan type: T for TCP (default), U for UDP")
 
     return parser.parse_args()
-
-
-def validate_port(port):
-
-    return 1 <= port <= 65535
-
-
-def parse_ports(port):
-
-    all_ports = []
-
-    if isinstance(port, str):
-        port_list = port.split(",")
-    else:
-        port_list = port
-
-    for item in port_list:
-
-        if isinstance(item, int):
-            if validate_port(item):
-                all_ports.append(item)
-            else:
-                print(f"[!] Invalid port: {item}")
-            continue
-
-        item = item.strip()
-
-        if "-" in item:
-
-            range_list = item.split("-")
-
-            if len(range_list) != 2 or not all(range_list):
-                print(f"[!] Invalid port range: {item}")
-                continue
-
-            try:
-                start = int(range_list[0])
-                end = int(range_list[1])
-
-            except ValueError:
-                print(f"[!] Invalid port range: {item}")
-                continue
-
-            if not validate_port(start) or not validate_port(end):
-                print(f"[!] Invalid port range: {item}")
-                continue
-
-            if start > end:
-                print(f"[!] Invalid port range: {item}")
-                continue
-
-            all_ports.extend(range(start, end + 1))
-
-        else:
-
-            try:
-                single_port = int(item)
-
-            except ValueError:
-                print(f"[!] Invalid port input: {item}")
-                continue
-
-            if validate_port(single_port):
-                all_ports.append(single_port)
-            else:
-                print(f"[!] Invalid port: {single_port}")
-
-    # Remove duplicate ports while preserving order
-    return list(dict.fromkeys(all_ports))
-
 
 def detect_service(target, port, service, timeout):
 
@@ -182,7 +97,6 @@ def detect_service(target, port, service, timeout):
 
     return "Not detected"
 
-
 def print_scan_info(target, status):
 
     print(f"\nTarget: {target}\n")
@@ -207,6 +121,15 @@ def print_scan_info(target, status):
                 f"{state['version']}"
             )
 
+def print_udp_results(target, results):
+
+    print(f"\nTarget: {target}\n")
+
+    print(f"{'PORT':<12}{'STATUS':<20}")
+    print("-" * 32)
+
+    for port, state in results.items():
+        print(f"{port:<12}{state['status']:<20}")
 
 def port_scan(target, port, timeout):
 
@@ -284,7 +207,6 @@ def port_scan(target, port, timeout):
 
     return result_dict
 
-
 def main():
 
     options = get_arguments()
@@ -310,13 +232,17 @@ def main():
     else:
         ports_to_scan = options.port
 
-    scan_result = port_scan(
-        options.target,
-        ports_to_scan,
-        options.timeout
-    )
+    if options.scan_type == "T":
 
-    print_scan_info(options.target, scan_result)
+        scan_result = port_scan( options.target, ports_to_scan, options.timeout)
+
+        print_scan_info(options.target, scan_result)
+
+    elif options.scan_type == "U":
+
+        scan_result = udp_scan(options.target, ports_to_scan, options.timeout)
+
+        print_udp_results(options.target, scan_result)
 
 
 if __name__ == "__main__":

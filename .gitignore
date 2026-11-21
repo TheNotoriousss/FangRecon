@@ -18,3 +18,7 @@ __pycache__/
 scan_results/
 *.json
 *.csv
+
+# Test artifacts
+.pytest_cache/
+.coverage

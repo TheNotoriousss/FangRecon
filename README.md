@@ -67,7 +67,7 @@ Use `-h` with either script to view its available arguments.
 | 1 | Network Discovery | Completed |
 | 2 | Scanner Improvements | Completed |
 | 3 | TCP Port Scanning & Service Detection | Completed |
-| 4 | UDP Port Scanning | Upcoming |
+| 4 | UDP Port Scanning | Completed |
 | 5 | Advanced Service & Version Fingerprinting | Upcoming |
 | 6 | Performance Optimization | Upcoming |
 | 7 | Final Integration | Upcoming |

@@ -5,6 +5,23 @@ import dns.exception
 import dns.flags
 import struct
 
+def validate_dns_response(response_data, query):
+
+    response = dns.message.from_wire(response_data)
+
+    if not response.flags & dns.flags.QR:
+        return False
+
+    if response.id != query.id:
+        return False
+
+    if response.opcode() != query.opcode():
+        return False
+
+    if response.question != query.question:
+        return False
+
+    return True
 
 def get_icmp_error(sock):
     if sock is None:
@@ -48,13 +65,20 @@ def get_icmp_error(sock):
     except OSError:
         return None
 
-
 def udp_scan(target, ports, timeout):
     all_ports = parse_ports(ports)
     result_dict = {}
 
     if not all_ports:
         print("[!] No valid ports to scan.")
+        return result_dict
+    dns_timeout = min(timeout, 0.5)
+
+    try:
+        resolved_target = socket.gethostbyname(target)
+
+    except socket.gaierror:
+        print(f"[!] Unable to resolve target hostname: {target}")
         return result_dict
 
     for port in all_ports:
@@ -76,37 +100,56 @@ def udp_scan(target, ports, timeout):
                 1
             )
 
-            sock.settimeout(timeout)
+            sock.settimeout(dns_timeout)
 
-            if port == 53:
-                query = dns.message.make_query("example.com", "A")
+            # First, try identifying DNS on any UDP port.
+            query = dns.message.make_query(
+                "fangrecon-test.invalid",
+                "A"
+            )
 
-                sock.sendto(
-                    query.to_wire(),
-                    (target, port)
-                )
+            sock.sendto(
+                query.to_wire(),
+                (resolved_target, port)
+            )
 
+            try:
                 response_data, address = sock.recvfrom(4096)
 
-                response = dns.message.from_wire(response_data)
-
                 if (
-                    response.flags & dns.flags.QR
-                    and response.id == query.id
-                    and response.question == query.question
+                    address[0] == resolved_target
+                    and address[1] == port
+                    and validate_dns_response(response_data, query)
                 ):
                     port_status = "OPEN"
-                else:
-                    port_status = "INVALID RESPONSE"
+                    result_dict[port] = {
+                        "status": port_status,
+                        "service": "DNS"
+                    }
+                    continue
+            except dns.exception.DNSException:
+                pass
 
-            else:
-                sock.sendto(
-                    b"FangRecon UDP probe",
-                    (target, port)
-                )
+            except socket.timeout:
+                pass
 
-                response, address = sock.recvfrom(1024)
+            # DNS was not confirmed. Try the generic UDP probe.
+            sock.settimeout(timeout)
+
+            sock.sendto(
+                b"FangRecon UDP probe",
+                (resolved_target, port)
+            )
+
+            response, address = sock.recvfrom(1024)
+
+            if (
+                address[0] == resolved_target
+                and address[1] == port
+            ):
                 port_status = "OPEN"
+            else:
+                port_status = "INVALID RESPONSE"
 
         except dns.exception.DNSException:
             port_status = "INVALID RESPONSE"
@@ -134,9 +177,11 @@ def udp_scan(target, ports, timeout):
             port_status = f"ERROR: {e}"
 
         finally:
-            if sock:
-                sock.close()
-
+            if sock is not None:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
         result_dict[port] = {
             "status": port_status
         }

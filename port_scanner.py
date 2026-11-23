@@ -2,39 +2,27 @@ import socket
 import errno
 import argparse
 from pathlib import Path
+
 from port_utils import parse_ports
 from udp_scanner import udp_scan
-from service_detection.http import http_service_detection
-from service_detection.https import https_service_detection
-from service_detection.ssh import ssh_service_detection
-from service_detection.ftp import ftp_service_detection
-from service_detection.smtp import smtp_service_detection
-from service_detection.dns import dns_service_detection
-from service_detection.mysql import mysql_service_detection
-from service_detection.postgresql import postgresql_service_detection
+from service_detection.engine import detect_service
+from service_detection.fingerprint import create_fingerprint
 
 
-common_services = {
-    20: "FTP-DATA",
-    21: "FTP",
-    22: "SSH",
-    23: "TELNET",
-    25: "SMTP",
-    53: "DNS",
-    80: "HTTP",
-    110: "POP3",
-    143: "IMAP",
-    443: "HTTPS",
-    445: "SMB",
-    465: "SMTPS",
-    587: "SMTP-SUBMISSION",
-    3306: "MySQL",
-    3389: "RDP",
-    5432: "PostgreSQL",
-    8080: "HTTP-ALT",
-    8443: "HTTPS-ALT"
-}
+def validate_target(target):
 
+    try:
+        socket.getaddrinfo(
+            target,
+            None,
+            socket.AF_INET,
+            socket.SOCK_STREAM
+        )
+        return True
+
+    except socket.gaierror:
+        print(f"[!] Invalid target IP address or hostname: {target}")
+        return False
 
 def get_arguments():
 
@@ -50,86 +38,74 @@ def get_arguments():
 
     return parser.parse_args()
 
-def detect_service(target, port, service, timeout):
-
-    if port in [80, 8080]:
-        return http_service_detection(target, port, timeout)
-
-    elif port in [443, 8443]:
-        return https_service_detection(target, port, timeout)
-
-    elif port == 22:
-        return ssh_service_detection(target, port, timeout)
-
-    elif port == 21:
-        return ftp_service_detection(target, port, timeout)
-
-    elif port in [25, 587]:
-        return smtp_service_detection(target, port, timeout)
-
-    elif port == 53:
-
-        dns_result = dns_service_detection(
-            target,
-            timeout,
-            port
-        )
-
-        udp = dns_result["udp"]
-        tcp = dns_result["tcp"]
-
-        udp_result = udp["status"]
-        tcp_result = tcp["status"]
-
-        if udp["response_code"]:
-            udp_result += f" ({udp['response_code']})"
-
-        if tcp["response_code"]:
-            tcp_result += f" ({tcp['response_code']})"
-
-        return f"UDP: {udp_result} | TCP: {tcp_result}"
-
-    elif port == 3306:
-        return mysql_service_detection(target, port, timeout)
-
-    elif port == 5432:
-        return postgresql_service_detection(target, port, timeout)
-
-    return "Not detected"
-
 def print_scan_info(target, status):
 
     print(f"\nTarget: {target}\n")
 
     print(
-        f"{'PORT':<10}"
-        f"{'STATUS':<18}"
-        f"{'SERVICE':<20}"
-        f"VERSION"
+        f"{'PORT':<8}"
+        f"{'STATUS':<16}"
+        f"{'SERVICE':<15}"
+        f"{'PRODUCT':<18}"
+        f"{'VERSION':<25}"
+        f"EXTRA INFO"
     )
 
-    print("-" * 85)
+    print("-" * 100)
 
     for port, state in status.items():
 
-        if state["status"] != "CLOSED":
+        if state["status"] != "OPEN":
+            continue
 
-            print(
-                f"{port:<10}"
-                f"{state['status']:<18}"
-                f"{state['service']:<20}"
-                f"{state['version']}"
-            )
+        fingerprint = state["fingerprint"]
+
+        product = fingerprint.get("product") or "-"
+        version = fingerprint.get("version") or "-"
+        extra_info = fingerprint.get("extra_info") or "-"
+
+        print(
+            f"{port:<8}"
+            f"{state['status']:<16}"
+            f"{fingerprint.get('service') or 'UNKNOWN':<15}"
+            f"{product:<18}"
+            f"{version:<25}"
+            f"{extra_info}"
+        )
+
 
 def print_udp_results(target, results):
 
     print(f"\nTarget: {target}\n")
 
-    print(f"{'PORT':<12}{'STATUS':<20}")
-    print("-" * 32)
+    print(
+        f"{'PORT':<8}"
+        f"{'STATUS':<16}"
+        f"{'SERVICE':<15}"
+        f"{'PRODUCT':<18}"
+        f"{'VERSION':<25}"
+        f"EXTRA INFO"
+    )
+
+    print("-" * 100)
 
     for port, state in results.items():
-        print(f"{port:<12}{state['status']:<20}")
+
+        if state["status"] not in ("OPEN","CLOSED","FILTERED","OPEN|FILTERED","UNREACHABLE"):
+            continue
+
+        service = state.get("service") or (
+            "UNKNOWN" if state["status"] == "OPEN" else "-"
+        )
+
+        print(
+            f"{port:<8}"
+            f"{state['status']:<16}"
+            f"{service:<15}"
+            f"{'-':<18}"
+            f"{'-':<25}"
+            f"-"
+        )
 
 def port_scan(target, port, timeout):
 
@@ -145,39 +121,45 @@ def port_scan(target, port, timeout):
 
         print(f"[*] Scanning {target}:{single_port}")
 
-        service = common_services.get(single_port, "UNKNOWN")
-        version = "Not detected"
-
-        sock = socket.socket(
-            socket.AF_INET,
-            socket.SOCK_STREAM
+        fingerprint = create_fingerprint(
+            service=None,
         )
 
-        sock.settimeout(timeout)
+        sock = None
 
         try:
+            sock = socket.socket(
+                socket.AF_INET,
+                socket.SOCK_STREAM
+            )
+
+            sock.settimeout(timeout)
+
             result = sock.connect_ex((target, single_port))
 
         except OSError as e:
             result = e.errno if e.errno is not None else -1
 
         finally:
-            sock.close()
+            if sock is not None:
+                try:
+                    sock.close()
+                except OSError:
+                    pass
 
         if result == 0:
 
             port_status = "OPEN"
 
             try:
-                version = detect_service(
-                    target,
-                    single_port,
-                    service,
-                    timeout
-                )
+                fingerprint = detect_service(target, single_port, timeout)
 
             except Exception as e:
-                version = f"Detection error: {e}"
+
+                fingerprint = create_fingerprint(
+                    service=None,
+                    details={"error": str(e)}
+                )
 
         elif result == errno.ECONNREFUSED:
 
@@ -185,6 +167,7 @@ def port_scan(target, port, timeout):
 
         elif result in [
             errno.ETIMEDOUT,
+            errno.EAGAIN,
             errno.EHOSTUNREACH,
             errno.ENETUNREACH
         ]:
@@ -194,15 +177,21 @@ def port_scan(target, port, timeout):
         else:
 
             port_status = "UNKNOWN ERROR"
-            version = errno.errorcode.get(
-                result,
-                "Unknown socket error"
+
+            fingerprint = create_fingerprint(
+                service=None,
+                details={
+                    "error": errno.errorcode.get(
+                        result,
+                        "Unknown socket error"
+                    )
+                }
             )
 
         result_dict[single_port] = {
             "status": port_status,
-            "service": service,
-            "version": version
+            "service": None,
+            "fingerprint": fingerprint
         }
 
     return result_dict
@@ -213,6 +202,9 @@ def main():
 
     if options.timeout <= 0:
         print("[!] Timeout must be greater than zero.")
+        return
+
+    if not validate_target(options.target):
         return
 
     if options.port is None:

@@ -5,6 +5,8 @@ import dns.rcode
 import dns.flags
 import dns.exception
 
+from service_detection.fingerprint import create_fingerprint
+
 
 def test_dns_protocol(query_function, query, target, timeout, port):
 
@@ -67,13 +69,11 @@ def dns_service_detection(target, timeout=3, port=53):
         "tcp": dns.query.tcp
     }
 
-    result = {
-        "service": "DNS"
-    }
+    protocol_results = {}
 
     for protocol, query_function in protocols.items():
 
-        result[protocol] = test_dns_protocol(
+        protocol_results[protocol] = test_dns_protocol(
             query_function,
             query,
             target,
@@ -81,4 +81,16 @@ def dns_service_detection(target, timeout=3, port=53):
             port
         )
 
-    return result
+    if not any(
+        result["status"] == "RESPONDING"
+        for result in protocol_results.values()
+    ):
+        return create_fingerprint(
+            service=None,
+            details=protocol_results
+        )
+
+    return create_fingerprint(
+        service="DNS",
+        details=protocol_results
+    )

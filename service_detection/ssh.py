@@ -1,50 +1,92 @@
 
 import socket
+import re
+
+from service_detection.fingerprint import create_fingerprint
 
 
 def ssh_service_detection(target, port, timeout):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(timeout)
 
-    banner = "Unknown"
-    response_data = b""
+    banner = None
 
     try:
-        sock.connect((target, port))
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 
-        while len(response_data) < 4096:
-            data = sock.recv(1024)
+            sock.settimeout(timeout)
+            sock.connect((target, port))
 
-            if not data:
-                break
+            response_data = b""
 
-            response_data += data
+            while len(response_data) < 4096:
 
-            if b"\n" in response_data:
-                break
+                data = sock.recv(1024)
 
-        if response_data:
+                if not data:
+                    break
+
+                response_data += data
+
+                if b"\n" in response_data:
+                    break
+
             lines = response_data.decode(
                 errors="replace"
             ).splitlines()
 
             for line in lines:
+
+                line = line.strip()
+
                 if line.startswith("SSH-"):
-                    banner = line.strip()
+                    banner = line
                     break
-            else:
-                banner = "SSH identification string not received"
 
-        else:
-            banner = "No SSH banner received"
+    except (socket.timeout, OSError):
+        pass
 
-    except socket.timeout:
-        banner = "Connection timed out"
+    if not banner:
+        return create_fingerprint(
+            service=None,
+            details={"banner": None}
+        )
 
-    except OSError as e:
-        banner = f"Socket error: {e}"
+    match = re.fullmatch(
+        r"SSH-([0-9]+\.[0-9]+)-([^\s]+)(?:\s+(.*))?",
+        banner
+    )
 
-    finally:
-        sock.close()
+    if not match:
+        return create_fingerprint(
+            service=None,
+            details={
+                "banner": banner,
+                "error": "Invalid SSH identification string"
+            }
+        )
 
-    return banner
+    protocol_version = match.group(1)
+    software = match.group(2)
+    extra_info = match.group(3)
+
+    product = software
+    version = None
+
+    software_match = re.match(
+        r"^(.+?)_([\w.+~-]+)$",
+        software
+    )
+
+    if software_match:
+        product = software_match.group(1)
+        version = software_match.group(2)
+
+    return create_fingerprint(
+        service="SSH",
+        product=product,
+        version=version,
+        extra_info=extra_info,
+        details={
+            "protocol_version": protocol_version,
+            "banner": banner
+        }
+    )

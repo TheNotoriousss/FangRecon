@@ -22,3 +22,9 @@ scan_results/
 # Test artifacts
 .pytest_cache/
 .coverage
+
+# Local test certificates and private keys
+test_cert.pem
+test_key.pem
+*.key
+*.pem

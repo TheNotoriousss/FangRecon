@@ -1,59 +1,103 @@
-
 import socket
+import re
+
+from service_detection.fingerprint import create_fingerprint
 
 
 def http_service_detection(target, port, timeout):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(timeout)
 
-    server_version = "Unknown"
     response_data = b""
 
+    details = {
+        "status_line": None,
+        "server_header": None,
+        "error": None
+    }
+
     try:
-        sock.connect((target, port))
 
-        request = (
-            f"GET / HTTP/1.1\r\n"
-            f"Host: {target}\r\n"
-            f"Connection: close\r\n\r\n"
-        )
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
 
-        sock.sendall(request.encode())
+            sock.settimeout(timeout)
+            sock.connect((target, port))
 
-        while len(response_data) < 8192:
-            remaining = 8192 - len(response_data)
-            data = sock.recv(min(1024, remaining))
+            request = (
+                f"GET / HTTP/1.1\r\n"
+                f"Host: {target}\r\n"
+                f"Connection: close\r\n\r\n"
+            )
 
-            if not data:
-                break
+            sock.sendall(request.encode())
 
-            response_data += data
+            while len(response_data) < 8192:
 
-            if b"\r\n\r\n" in response_data:
-                break
+                remaining = 8192 - len(response_data)
+
+                data = sock.recv(min(1024, remaining))
+
+                if not data:
+                    break
+
+                response_data += data
+
+                if b"\r\n\r\n" in response_data:
+                    break
 
     except socket.timeout:
-        server_version = "Response timed out"
+        details["error"] = "HTTP response timed out"
 
     except OSError as e:
-        server_version = f"Connection error: {e}"
+        details["error"] = str(e)
 
-    finally:
-        sock.close()
+    if not response_data:
 
-    if response_data:
-        response = response_data.decode(errors="replace")
-        headers = response.split("\r\n\r\n")[0]
-        header_lines = headers.split("\r\n")
+        return create_fingerprint(
+            service=None,
+            details=details
+        )
 
-        server_version = "Server version is not disclosed"
+    status_line = response_data.split(b"\r\n", 1)[0].decode(
+        errors="replace"
+    )
 
-        for line in header_lines:
+    details["status_line"] = status_line
+
+    # Validate the HTTP response status line.
+    match = re.fullmatch(
+        r"HTTP/(1\.0|1\.1) ([1-5][0-9]{2})(?: .*)?",
+        status_line
+    )
+
+    if not match:
+
+        details["error"] = "Invalid HTTP status line"
+
+        return create_fingerprint(
+            service=None,
+            details=details
+        )
+
+    # Extract headers if the response contains them.
+    header_data = response_data.split(b"\r\n\r\n", 1)
+
+    if len(header_data) == 2:
+
+        header_lines = header_data[0].decode(
+            errors="replace"
+        ).split("\r\n")
+
+        for line in header_lines[1:]:
+
             if line.lower().startswith("server:"):
-                server_version = line.split(":", 1)[1].strip()
+
+                details["server_header"] = (
+                    line.split(":", 1)[1].strip()
+                )
+
                 break
 
-    elif server_version == "Unknown":
-        server_version = "No response received from server"
-
-    return server_version
+    return create_fingerprint(
+        service="HTTP",
+        extra_info=details["server_header"],
+        details=details
+    )

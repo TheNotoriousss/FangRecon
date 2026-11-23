@@ -1,77 +1,160 @@
 
 import socket
 import ssl
+import re
+
+from service_detection.fingerprint import create_fingerprint
 
 
 def https_service_detection(target, port, timeout):
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.settimeout(timeout)
-
-    secure_sock = None
-    response_data = b""
-    server_version = "Unknown"
 
     context = ssl.create_default_context()
+    context.check_hostname = False
+    context.verify_mode = ssl.CERT_NONE
+
+    details = {
+        "status_line": None,
+        "server_header": None,
+        "tls_version": None,
+        "cipher": None,
+        "certificate": None,
+        "certificate_verified": False,
+        "error": None
+    }
 
     try:
-        sock.connect((target, port))
 
-        secure_sock = context.wrap_socket(
-            sock,
-            server_hostname=target
+        with socket.create_connection(
+            (target, port),
+            timeout=timeout
+        ) as sock:
+
+            sock.settimeout(timeout)
+
+            with context.wrap_socket(
+                sock,
+                server_hostname=target
+            ) as tls_sock:
+
+                details["tls_version"] = tls_sock.version()
+
+                cipher_info = tls_sock.cipher()
+
+                if cipher_info:
+
+                    details["cipher"] = {
+                        "name": cipher_info[0],
+                        "protocol": cipher_info[1],
+                        "bits": cipher_info[2]
+                    }
+
+                certificate = tls_sock.getpeercert(
+                    binary_form=True
+                )
+
+                if certificate:
+
+                    cert = ssl.DER_cert_to_PEM_cert(certificate)
+
+                    details["certificate"] = {
+                        "available": True,
+                        "der_size": len(certificate)
+                    }
+
+                request = (
+                    f"GET / HTTP/1.1\r\n"
+                    f"Host: {target}\r\n"
+                    f"Connection: close\r\n\r\n"
+                )
+
+                tls_sock.sendall(request.encode())
+
+                response_data = b""
+
+                while len(response_data) < 8192:
+
+                    remaining = 8192 - len(response_data)
+
+                    data = tls_sock.recv(
+                        min(1024, remaining)
+                    )
+
+                    if not data:
+                        break
+
+                    response_data += data
+
+                    if b"\r\n" in response_data:
+                        break
+
+        if not response_data:
+
+            details["error"] = "No HTTP response received"
+
+            return create_fingerprint(
+                service=None,
+                details=details
+            )
+
+        status_line = response_data.split(
+            b"\r\n", 1
+        )[0].decode(errors="replace")
+
+        details["status_line"] = status_line
+
+        match = re.fullmatch(
+            r"HTTP/(1\.0|1\.1|2|3) ([1-5][0-9]{2})(?: .*)?",
+            status_line
         )
 
-        request = (
-            f"GET / HTTP/1.1\r\n"
-            f"Host: {target}\r\n"
-            f"Connection: close\r\n\r\n"
+        if not match:
+
+            details["error"] = "Invalid HTTP status line"
+
+            return create_fingerprint(
+                service=None,
+                details=details
+            )
+
+        header_data = response_data.split(
+            b"\r\n\r\n", 1
         )
 
-        secure_sock.sendall(request.encode())
+        if len(header_data) == 2:
 
-        while len(response_data) < 8192:
-            remaining = 8192 - len(response_data)
-            data = secure_sock.recv(min(1024, remaining))
+            header_lines = header_data[0].decode(
+                errors="replace"
+            ).split("\r\n")
 
-            if not data:
-                break
+            for line in header_lines[1:]:
 
-            response_data += data
+                if line.lower().startswith("server:"):
 
-            if b"\r\n\r\n" in response_data:
-                break
+                    details["server_header"] = (
+                        line.split(":", 1)[1].strip()
+                    )
 
-    except ssl.SSLCertVerificationError:
-        server_version = "TLS certificate verification failed"
+                    break
+
+        return create_fingerprint(
+            service="HTTPS",
+            extra_info=details["server_header"],
+            details=details
+        )
 
     except ssl.SSLError as e:
-        server_version = f"TLS error: {e}"
+
+        details["error"] = f"TLS error: {e}"
 
     except socket.timeout:
-        server_version = "Connection timed out"
+
+        details["error"] = "HTTPS response timed out"
 
     except OSError as e:
-        server_version = f"Socket error: {e}"
 
-    finally:
-        if secure_sock is not None:
-            secure_sock.close()
-        else:
-            sock.close()
+        details["error"] = str(e)
 
-    if response_data:
-        response = response_data.decode(errors="replace")
-        headers = response.split("\r\n\r\n")[0]
-        header_lines = headers.split("\r\n")
-
-        server_version = "Server version is not disclosed"
-
-        for line in header_lines:
-            if line.lower().startswith("server:"):
-                server_version = line.split(":", 1)[1].strip()
-                break
-
-    elif server_version == "Unknown":
-        server_version = "No response received from server"
-
-    return server_version
+    return create_fingerprint(
+        service=None,
+        details=details
+    )

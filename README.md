@@ -113,7 +113,7 @@ Demonstrates UDP port scanning and port-state classification, including OPEN, CL
 
 Demonstrates protocol-based service identification and version fingerprinting using locally hosted mock services.
 
-![FangRecon Service Detection Demo](docs/assets/fangrecon-demo.png)
+![FangRecon Service Detection Demo](docs/assets/fangrecon-port-scanner-demo.png)
 
 ## UDP Port States
 

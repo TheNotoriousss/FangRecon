@@ -91,7 +91,27 @@ Use `-h` with either script to view its available arguments.
 
 ## Demo
 
-The following screenshot demonstrates FangRecon's service detection and version fingerprinting using locally hosted mock services.
+### 1. Network Discovery
+
+Demonstrates ARP-based discovery of active devices, including IP addresses, MAC addresses, and hostname resolution, using an isolated local test network.
+
+![FangRecon Network Discovery Demo](docs/assets/fangrecon-discovery-demo.png)
+
+### 2. TCP Port Scanning
+
+Demonstrates TCP port scanning and identification of open ports with detected services, products, versions, and additional information using locally hosted mock services.
+
+![FangRecon TCP Scanning Demo](docs/assets/fangrecon-tcp-demo.png)
+
+### 3. UDP Port Scanning
+
+Demonstrates UDP port scanning and port-state classification, including OPEN, CLOSED, and DNS service identification using locally hosted mock services.
+
+![FangRecon UDP Scanning Demo](docs/assets/fangrecon-udp-demo.png)
+
+### 4. Service Detection & Version Fingerprinting
+
+Demonstrates protocol-based service identification and version fingerprinting using locally hosted mock services.
 
 ![FangRecon Service Detection Demo](docs/assets/fangrecon-demo.png)
 

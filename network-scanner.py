@@ -12,10 +12,10 @@ def clean_terminal():
     subprocess.run([command], check=False)
 
 def banner():
-    print("=" * 60)
-    print("                  FangRecon v1.0")
-    print("         Network Discovery & Enumeration")
-    print("=" * 60)
+    print("=" * 88)
+    print("                                     FangRecon v1.0")
+    print("                             Network Discovery & Enumeration")
+    print("=" * 88)
 
 def print_scan_info(ip_add, interface, timeout, retires):
     print(f"[+] Target Network : {ip_add}")

@@ -44,7 +44,7 @@ source .venv/bin/activate
 Install dependencies:
 
 ```bash
-pip install -r requirement.txt
+pip install -r requirements.txt
 ```
 
 ## Usage
@@ -54,13 +54,13 @@ pip install -r requirement.txt
 Discover active devices on a local network:
 
 ```bash
-sudo ./.venv/bin/python3 network_scanner.py -ip 192.168.1.0/24
+sudo ./.venv/bin/python3 network-scanner.py -ip 192.168.1.0/24
 ```
 
 Specify a network interface when required:
 
 ```bash
-sudo ./.venv/bin/python3 network_scanner.py -ip 192.168.1.0/24 -in eth0
+sudo ./.venv/bin/python3 network-scanner.py -ip 192.168.1.0/24 -in eth0
 ```
 
 ### 2. TCP Port Scanning
@@ -88,6 +88,12 @@ python3 port_scanner.py -x 192.168.1.1 -p 22,80,443 -t 3
 ```
 
 Use `-h` with either script to view its available arguments.
+
+## Demo
+
+The following screenshot demonstrates FangRecon's service detection and version fingerprinting using locally hosted mock services.
+
+![FangRecon Service Detection Demo](docs/assets/fangrecon-demo.png)
 
 ## UDP Port States
 

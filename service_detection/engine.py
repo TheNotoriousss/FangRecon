@@ -11,9 +11,21 @@ from service_detection.postgresql import postgresql_service_detection
 from service_detection.dns import dns_service_detection
 
 
-def detect_service(target, port, timeout):
+# Common ports are hints for probe ordering only.
+# Every detector remains available as a fallback.
+PORT_HINTS = {
+    ssh_service_detection: {22, 2222},
+    ftp_service_detection: {21, 2121},
+    smtp_service_detection: {25, 465, 587, 2525},
+    http_service_detection: {80, 8080, 8082},
+    https_service_detection: {443, 8443},
+    mysql_service_detection: {3306, 3307},
+    postgresql_service_detection: {5432, 5433},
+    dns_service_detection: {53, 5353},
+}
 
-    probe_timeout = min(timeout, 0.5)
+
+def get_detector_order(port):
 
     detectors = [
         ssh_service_detection,
@@ -23,20 +35,52 @@ def detect_service(target, port, timeout):
         smtp_service_detection,
         mysql_service_detection,
         postgresql_service_detection,
+        dns_service_detection,
     ]
+
+    preferred = []
+
+    for detector, common_ports in PORT_HINTS.items():
+
+        if port in common_ports:
+            preferred.append(detector)
+
+    remaining = [
+        detector
+        for detector in detectors
+        if detector not in preferred
+    ]
+
+    return preferred + remaining
+
+
+def detect_service(target, port, timeout):
+
+    probe_timeout = min(timeout, 0.5)
 
     detector_errors = {}
 
-    for detector in detectors:
+    for detector in get_detector_order(port):
 
         detector_name = detector.__name__
 
         try:
-            result = detector(
-                target,
-                port,
-                probe_timeout
-            )
+
+            if detector == dns_service_detection:
+
+                result = detector(
+                    target,
+                    probe_timeout,
+                    port
+                )
+
+            else:
+
+                result = detector(
+                    target,
+                    port,
+                    probe_timeout
+                )
 
             if result.get("service") is not None:
                 return result
@@ -47,26 +91,8 @@ def detect_service(target, port, timeout):
                 )
 
         except Exception as error:
+
             detector_errors[detector_name] = str(error)
-
-    # DNS uses a different function signature.
-    try:
-        result = dns_service_detection(
-            target,
-            probe_timeout,
-            port
-        )
-
-        if result.get("service") is not None:
-            return result
-
-        if result.get("details"):
-            detector_errors["dns_service_detection"] = (
-                result["details"]
-            )
-
-    except Exception as error:
-        detector_errors["dns_service_detection"] = str(error)
 
     return create_fingerprint(
         service=None,

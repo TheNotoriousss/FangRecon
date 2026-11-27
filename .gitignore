@@ -24,7 +24,5 @@ scan_results/
 .coverage
 
 # Local test certificates and private keys
-test_cert.pem
-test_key.pem
-*.key
-*.pem
+/test_cert.pem
+/test_key.pem

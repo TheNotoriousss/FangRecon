@@ -2,12 +2,12 @@ import socket
 import errno
 import argparse
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from port_utils import parse_ports
 from udp_scanner import udp_scan
 from service_detection.engine import detect_service
 from service_detection.fingerprint import create_fingerprint
-
 
 def validate_target(target):
 
@@ -53,7 +53,7 @@ def print_scan_info(target, status):
 
     print("-" * 100)
 
-    for port, state in status.items():
+    for port, state in sorted(status.items()):
 
         if state["status"] != "OPEN":
             continue
@@ -73,7 +73,6 @@ def print_scan_info(target, status):
             f"{extra_info}"
         )
 
-
 def print_udp_results(target, results):
 
     print(f"\nTarget: {target}\n")
@@ -89,7 +88,7 @@ def print_udp_results(target, results):
 
     print("-" * 100)
 
-    for port, state in results.items():
+    for port, state in sorted(results.items()):
 
         if state["status"] not in ("OPEN","CLOSED","FILTERED","OPEN|FILTERED","UNREACHABLE"):
             continue
@@ -107,92 +106,124 @@ def print_udp_results(target, results):
             f"-"
         )
 
+def tcp_connect(target, port, timeout):
+
+    sock = None
+
+    try:
+        sock = socket.socket(
+            socket.AF_INET,
+            socket.SOCK_STREAM
+        )
+
+        sock.settimeout(timeout)
+
+        result = sock.connect_ex((target, port))
+
+        return port, result
+
+    except OSError as e:
+
+        return port, e.errno if e.errno is not None else -1
+
+    finally:
+
+        if sock is not None:
+
+            try:
+                sock.close()
+
+            except OSError:
+                pass
+
 def port_scan(target, port, timeout):
 
     result_dict = {}
 
-    all_ports = parse_ports(port)
+    all_ports = port
 
     if not all_ports:
         print("[!] No valid ports to scan.")
         return result_dict
 
-    for single_port in all_ports:
+    max_workers = min(100, len(all_ports))
 
-        print(f"[*] Scanning {target}:{single_port}")
+    print(f"[*] Scanning {len(all_ports)} ports using {max_workers} workers")
 
-        fingerprint = create_fingerprint(
-            service=None,
-        )
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
 
-        sock = None
+        futures = {
+            executor.submit(
+                tcp_connect,
+                target,
+                single_port,
+                timeout
+            ): single_port
+            for single_port in all_ports
+        }
 
-        try:
-            sock = socket.socket(
-                socket.AF_INET,
-                socket.SOCK_STREAM
-            )
+        for future in as_completed(futures):
 
-            sock.settimeout(timeout)
-
-            result = sock.connect_ex((target, single_port))
-
-        except OSError as e:
-            result = e.errno if e.errno is not None else -1
-
-        finally:
-            if sock is not None:
-                try:
-                    sock.close()
-                except OSError:
-                    pass
-
-        if result == 0:
-
-            port_status = "OPEN"
+            single_port = futures[future]
 
             try:
-                fingerprint = detect_service(target, single_port, timeout)
+                _, result = future.result()
 
-            except Exception as e:
+            except Exception:
+                result = -1
+
+            fingerprint = create_fingerprint(service=None)
+
+            if result == 0:
+
+                port_status = "OPEN"
+
+                try:
+                    fingerprint = detect_service(
+                        target,
+                        single_port,
+                        timeout
+                    )
+
+                except Exception as e:
+
+                    fingerprint = create_fingerprint(
+                        service=None,
+                        details={"error": str(e)}
+                    )
+
+            elif result == errno.ECONNREFUSED:
+
+                port_status = "CLOSED"
+
+            elif result in [
+                errno.ETIMEDOUT,
+                errno.EAGAIN,
+                errno.EHOSTUNREACH,
+                errno.ENETUNREACH
+            ]:
+
+                port_status = "NO RESPONSE"
+
+            else:
+
+                port_status = "UNKNOWN ERROR"
 
                 fingerprint = create_fingerprint(
                     service=None,
-                    details={"error": str(e)}
+                    details={
+                        "error": errno.errorcode.get(
+                            result,
+                            "Unknown socket error"
+                        )
+                    }
                 )
 
-        elif result == errno.ECONNREFUSED:
-
-            port_status = "CLOSED"
-
-        elif result in [
-            errno.ETIMEDOUT,
-            errno.EAGAIN,
-            errno.EHOSTUNREACH,
-            errno.ENETUNREACH
-        ]:
-
-            port_status = "NO RESPONSE"
-
-        else:
-
-            port_status = "UNKNOWN ERROR"
-
-            fingerprint = create_fingerprint(
-                service=None,
-                details={
-                    "error": errno.errorcode.get(
-                        result,
-                        "Unknown socket error"
-                    )
-                }
-            )
-
-        result_dict[single_port] = {
-            "status": port_status,
-            "service": None,
-            "fingerprint": fingerprint
-        }
+            result_dict[single_port] = {
+                "status": port_status,
+                "service": None,
+                "fingerprint": fingerprint
+            }
 
     return result_dict
 
@@ -212,18 +243,31 @@ def main():
         base_dir = Path(__file__).resolve().parent
         data_file = base_dir / "top-1000.txt"
 
-        with open(data_file, "r") as file:
-            usable_ports = [
-                int(line.strip())
-                for line in file
-                if line.strip()
-            ]
+        try:
+            with open(data_file, "r") as file:
+                usable_ports = [
+                    int(line.strip())
+                    for line in file
+                    if line.strip()
+                ]
+
+        except FileNotFoundError:
+            print("[!] top-1000.txt file not found.")
+            return
+
+        except ValueError:
+            print("[!] Invalid entry found in top-1000.txt.")
+            return
 
         ports_to_scan = usable_ports
 
     else:
         ports_to_scan = options.port
+    ports_to_scan = parse_ports(ports_to_scan)
 
+    if not ports_to_scan:
+        print("[!] No valid ports to scan. Exiting.")
+        return
     if options.scan_type == "T":
 
         scan_result = port_scan( options.target, ports_to_scan, options.timeout)

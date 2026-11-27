@@ -1,0 +1,46 @@
+#!/bin/bash
+
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+PROJECT_DIR="$(dirname "$SCRIPT_PATH")"
+PYTHON="$PROJECT_DIR/.venv/bin/python3"
+
+if [[ ! -x "$PYTHON" ]]; then
+    echo "[!] FangRecon is not installed properly."
+    echo "[!] Run ./install.sh from the project directory."
+    exit 1
+fi
+
+case "$1" in
+    discovery)
+        shift
+        exec "$PYTHON" "$PROJECT_DIR/network-scanner.py" "$@"
+        ;;
+
+    ports)
+        shift
+        exec "$PYTHON" "$PROJECT_DIR/port_scanner.py" "$@"
+        ;;
+
+    --help|-h|"")
+        echo "FangRecon v1.0 - Network Discovery & Enumeration"
+        echo
+        echo "Usage:"
+        echo "  sudo fangrecon discovery [options]"
+        echo "  sudo fangrecon ports [options]"
+        echo
+        echo "Commands:"
+        echo "  discovery    Network host discovery using ARP"
+        echo "  ports        TCP and UDP port scanning"
+        echo
+        echo "Examples:"
+        echo "  sudo fangrecon discovery -ip 192.168.1.0/24 -in wlan0"
+        echo "  sudo fangrecon ports -x 192.168.1.1 -p 22,80,443 -s T"
+        echo "  sudo fangrecon ports -x 192.168.1.1 -p 53,5353 -s U"
+        ;;
+
+    *)
+        echo "[!] Invalid command: $1"
+        echo "Run 'fangrecon --help' for usage."
+        exit 1
+        ;;
+esac

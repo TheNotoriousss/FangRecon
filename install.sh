@@ -10,6 +10,7 @@ fi
 
 PROJECT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 COMMAND_PATH="/usr/local/bin/fangrecon"
+SUDOERS_FILE="/etc/sudoers.d/fangrecon"
 
 echo "[+] Installing FangRecon..."
 
@@ -33,6 +34,56 @@ if [[ -e "$COMMAND_PATH" && ! -L "$COMMAND_PATH" ]]; then
     echo "[!] Refusing to overwrite it."
     exit 1
 fi
+
+# Configure sudo PATH if necessary
+echo "[+] Checking sudo PATH..."
+
+SUDO_PATH="$(sudo sh -c 'printf "%s" "$PATH"')"
+
+case ":$SUDO_PATH:" in
+    *:/usr/local/bin:*)
+        echo "[+] /usr/local/bin is already in sudo PATH."
+        ;;
+    *)
+
+        echo "[+] Adding /usr/local/bin to sudo PATH..."
+
+        if [[ -e "$SUDOERS_FILE" || -L "$SUDOERS_FILE" ]]; then
+            echo "[!] $SUDOERS_FILE already exists."
+            echo "[!] Refusing to overwrite an existing sudoers configuration."
+            exit 1
+        fi
+
+        SUDOERS_TEMP="$(mktemp)"
+
+        trap 'rm -f "$SUDOERS_TEMP"' EXIT
+
+        printf 'Defaults secure_path="%s:/usr/local/bin"\n' "$SUDO_PATH" > "$SUDOERS_TEMP"
+
+        # Validate before installing
+        sudo visudo -cf "$SUDOERS_TEMP"
+
+        # Install dedicated sudoers configuration
+        sudo install -o root -g root -m 0440 \
+            "$SUDOERS_TEMP" "$SUDOERS_FILE"
+
+        rm -f "$SUDOERS_TEMP"
+        trap - EXIT
+
+        # Verify updated PATH
+        SUDO_PATH="$(sudo sh -c 'printf "%s" "$PATH"')"
+
+        case ":$SUDO_PATH:" in
+            *:/usr/local/bin:*)
+                echo "[+] Sudo PATH updated successfully."
+                ;;
+            *)
+                echo "[!] Failed to update sudo PATH."
+                exit 1
+                ;;
+        esac
+        ;;
+esac
 
 echo "[+] Checking virtual environment..."
 

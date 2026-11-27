@@ -1,19 +1,20 @@
 # FangRecon
 
-**FangRecon** is a Python-based network reconnaissance tool designed to discover active devices, scan TCP and UDP ports, and identify network services and their versions.
+**FangRecon** is a Python-based network reconnaissance tool designed to discover active devices, scan TCP and UDP ports, identify network services, and perform protocol-based version fingerprinting.
 
-Built as a learning-oriented cybersecurity project, FangRecon focuses on network discovery, port scanning, service identification, and protocol-based fingerprinting.
+It combines ARP-based network discovery, concurrent port scanning, and service detection into a unified command-line tool.
 
 ## Features
 
-- **Network Discovery:** ARP-based discovery of active devices on a local network.
-- **Host Identification:** Retrieves IP addresses, MAC addresses, MAC vendors, and hostnames.
-- **TCP Port Scanning:** Supports individual ports, port ranges, and a default Top 1000 port list.
-- **UDP Port Scanning:** Supports UDP probing, DNS detection, and ICMP-based port-state classification.
-- **Service Detection:** Identifies common services, including HTTP, HTTPS, SSH, FTP, SMTP, DNS, MySQL, and PostgreSQL.
-- **Version Fingerprinting:** Extracts available product names, service versions, and additional banner information.
-- **Protocol Validation:** Validates service responses instead of relying solely on port numbers.
-- **Configurable Scanning:** Supports custom timeouts and scan parameters.
+- **Network Discovery:** Discover active devices using ARP scanning.
+- **Host Identification:** Retrieve IP addresses, MAC addresses, vendors, and hostnames.
+- **TCP Port Scanning:** Scan individual ports, custom ranges, and the default Top 1000 ports.
+- **UDP Port Scanning:** Identify UDP port states using responses and ICMP information.
+- **Service Detection:** Identify HTTP, HTTPS, SSH, FTP, SMTP, DNS, MySQL, and PostgreSQL.
+- **Version Fingerprinting:** Extract available service banners, product names, and versions.
+- **Concurrent Scanning:** Improve scanning performance through multithreading.
+- **Unified CLI:** Access discovery and port scanning through one command.
+- **Easy Installation:** Automated setup using a Python virtual environment.
 
 ## Technologies
 
@@ -21,9 +22,9 @@ Built as a learning-oriented cybersecurity project, FangRecon focuses on network
 - Scapy
 - Socket Programming
 - dnspython
-- Argparse
-- SSL/TLS
-- Linux networking and ICMP error handling
+- mac-vendor-lookup
+- ThreadPoolExecutor
+- Linux networking
 
 ## Installation
 
@@ -34,98 +35,140 @@ git clone https://github.com/TheNotoriousss/FangRecon.git
 cd FangRecon
 ```
 
-Create and activate a virtual environment:
+Run the installer:
 
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
+./install.sh
 ```
 
-Install dependencies:
+Verify installation:
 
 ```bash
-pip install -r requirements.txt
+fangrecon --help
 ```
 
 ## Usage
 
-### 1. Network Discovery
+FangRecon provides two main commands:
+
+- `discovery` — Network host discovery.
+- `ports` — TCP and UDP port scanning.
+
+### View available options
+
+```bash
+fangrecon --help
+fangrecon discovery --help
+fangrecon ports --help
+```
+
+### Network Discovery
 
 Discover active devices on a local network:
 
 ```bash
-sudo ./.venv/bin/python3 network-scanner.py -ip 192.168.1.0/24
+sudo fangrecon discovery -ip 192.168.1.0/24 -in wlan0
 ```
 
-Specify a network interface when required:
+### TCP Port Scanning
+
+Scan selected TCP ports:
 
 ```bash
-sudo ./.venv/bin/python3 network-scanner.py -ip 192.168.1.0/24 -in eth0
+sudo fangrecon ports -x 192.168.1.1 -p 22,80,443 -s T
 ```
 
-### 2. TCP Port Scanning
-
-Scan specific TCP ports:
+Scan the default Top 1000 ports:
 
 ```bash
-python3 port_scanner.py -x 192.168.1.1 -p 22,80,443
+sudo fangrecon ports -x 192.168.1.1
 ```
 
-### 3. UDP Port Scanning
+### UDP Port Scanning
 
-Scan specific UDP ports:
+Scan selected UDP ports:
 
 ```bash
-python3 port_scanner.py -x 192.168.1.1 -p 53,123,161 -s U
+sudo fangrecon ports -x 192.168.1.1 -p 53,123,161 -s U
 ```
 
-### 4. Configurable Timeout
+## Demonstrations
 
-Set a custom timeout:
+### Network Discovery
 
-```bash
-python3 port_scanner.py -x 192.168.1.1 -p 22,80,443 -t 3
-```
-
-Use `-h` with either script to view its available arguments.
-
-## Demo
-
-### 1. Network Discovery
-
-Demonstrates ARP-based discovery of active devices, including IP addresses, MAC addresses, and hostname resolution, using an isolated local test network.
+<!-- IMAGE COMMENT: Place the network discovery screenshot here. Show discovered IP addresses, MAC addresses, vendors, and hostnames. -->
 
 ![FangRecon Network Discovery Demo](docs/assets/fangrecon-discovery-demo.png)
 
-### 2. TCP Port Scanning
+### TCP Port Scanning
 
-Demonstrates TCP port scanning and identification of open ports with detected services, products, versions, and additional information using locally hosted mock services.
+<!-- IMAGE COMMENT: Place the TCP port scanning screenshot here. Show open ports and their detected services. -->
 
 ![FangRecon TCP Scanning Demo](docs/assets/fangrecon-tcp-demo.png)
 
-### 3. UDP Port Scanning
+### Service Detection & Fingerprinting
 
-Demonstrates UDP port scanning and port-state classification, including OPEN, CLOSED, and DNS service identification using locally hosted mock services.
+<!-- IMAGE COMMENT: Place the service detection screenshot here. Highlight detected protocols, product names, and service versions. -->
 
 ![FangRecon UDP Scanning Demo](docs/assets/fangrecon-udp-demo.png)
 
-### 4. Service Detection & Version Fingerprinting
+### UDP Port Scanning
 
-Demonstrates protocol-based service identification and version fingerprinting using locally hosted mock services.
+<!-- IMAGE COMMENT: Place the UDP scanning screenshot here. Show UDP port states and identified services. -->
 
 ![FangRecon Service Detection Demo](docs/assets/fangrecon-port-scanner-demo.png)
 
-## UDP Port States
+## Performance Optimization
 
-FangRecon distinguishes between different UDP scan outcomes:
+FangRecon uses concurrent scanning and optimized service-probe selection to reduce execution time.
 
-| Status | Meaning |
-|---|---|
-| OPEN | A valid response was received |
-| CLOSED | Port unreachable response received |
-| FILTERED | Traffic administratively prohibited |
-| OPEN\|FILTERED | No response received; state remains uncertain |
-| UNREACHABLE | Network or host unreachable response |
+Results from controlled local benchmarks:
+
+| Test | Before | After | Improvement |
+|---|---:|---:|---:|
+| TCP scanning (100 filtered ports) | 202.96 s | 2.14 s | ~94.8× |
+| UDP scanning (10 silent ports) | 25.22 s | 2.60 s | ~9.7× |
+| Service detection (9 mock services) | 9.33 s | 0.22 s | ~42.4× |
+
+*These results represent controlled local tests, not guaranteed real-world performance.*
+
+## Testing
+
+FangRecon includes a test suite containing:
+
+- Protocol mock servers.
+- Service detection tests.
+- Negative tests for unexpected protocol responses.
+- DNS, FTP, HTTP, HTTPS, SMTP, MySQL, and PostgreSQL tests.
+- UDP scanning test utilities.
+
+Test scripts and mock servers are located in the `tests/` directory.
+
+Generate local test certificates when required:
+
+```bash
+bash tests/generate_test_cert.sh
+```
+
+The generated certificates and private keys are excluded from Git.
+
+## Project Structure
+
+```text
+FangRecon/
+├── docs/
+│   └── assets/              # Demonstration screenshots
+├── service_detection/       # Service detection modules
+├── tests/                   # Mock servers and regression tests
+├── fangrecon                # Unified CLI launcher
+├── install.sh               # Installation script
+├── network-scanner.py       # ARP network discovery
+├── port_scanner.py          # TCP port scanning
+├── udp_scanner.py           # UDP port scanning
+├── port_utils.py            # Port utilities
+├── requirements.txt         # Python dependencies
+└── top-1000.txt             # Default port list
+```
 
 ## Project Status
 
@@ -136,11 +179,19 @@ FangRecon distinguishes between different UDP scan outcomes:
 | 3 | TCP Port Scanning & Service Detection | Completed |
 | 4 | UDP Port Scanning | Completed |
 | 5 | Advanced Service & Version Fingerprinting | Completed |
-| 6 | Performance Optimization | Upcoming |
-| 7 | Final Integration | Upcoming |
+| 6 | Performance Optimization | Completed |
+| 7 | Final Integration | Completed |
 
 ## Disclaimer
 
-FangRecon is intended for educational purposes and authorized security testing only. Scan only networks and systems you own or have explicit permission to assess.
+FangRecon is intended for educational purposes and authorized security testing only.
+
+Only scan networks and systems that you own or have explicit permission to assess. Unauthorized scanning may violate applicable laws and network policies.
 
 FangRecon is a reconnaissance tool. It does not perform exploitation or attempt to authenticate to discovered services.
+
+## About
+
+FangRecon is a learning-oriented cybersecurity project focused on network discovery, port scanning, service identification, and protocol-based fingerprinting.
+
+**Build. Break. Protect.**

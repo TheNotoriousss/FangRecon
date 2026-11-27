@@ -3,7 +3,7 @@ import errno
 import argparse
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-
+from banner import print_banner
 from port_utils import parse_ports
 from udp_scanner import udp_scan
 from service_detection.engine import detect_service
@@ -268,6 +268,7 @@ def main():
     if not ports_to_scan:
         print("[!] No valid ports to scan. Exiting.")
         return
+    print_banner("TCP & UDP Port Scanning")
     if options.scan_type == "T":
 
         scan_result = port_scan( options.target, ports_to_scan, options.timeout)

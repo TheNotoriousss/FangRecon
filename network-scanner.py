@@ -1,21 +1,15 @@
 import argparse  #a better newer version of optparse
-import scapy.all as scapy #scapy.all module is use for network packets, it capture 2 lists, answered and unanswered in which both have 2 lists of it's own
-import ipaddress # let use work we every types of ip 
-from mac_vendor_lookup import MacLookup, VendorNotFoundError # let use verify the OUI 
-import socket # reverse DNS lookup
-import subprocess # let us pass terminal commands
-import platform
+import ipaddress # let use work we every types of ip
 import signal # tracks pressed keys
+import scapy.all as scapy #scapy.all module is use for network packets, it capture 2 lists, answered and unanswered in which both have 2 lists of it's own
 
-def clean_terminal():
-    command = 'cls' if platform.system() == "Windows" else "clear"
-    subprocess.run([command], check=False)
+import socket # reverse DNS lookup
+from mac_vendor_lookup import MacLookup, VendorNotFoundError # let use verify the OUI
 
-def banner():
-    print("=" * 88)
-    print("                                     FangRecon v1.0")
-    print("                             Network Discovery & Enumeration")
-    print("=" * 88)
+from banner import print_banner
+
+
+
 
 def print_scan_info(ip_add, interface, timeout, retires):
     print(f"[+] Target Network : {ip_add}")
@@ -134,18 +128,16 @@ def print_result(results_lists):
 
 
 try:
-    clean_terminal()
-    banner()
-
     options = get_arguments()
+
+    print_banner("Network Discovery & Enumeration")
 
     print_scan_info(options.ip_add, options.interface, options.timeout, options.retries)
     scan_results = scan(options.ip_add, options.interface, options.timeout, options.retries)
-
 
     scan_banner()
     print_result(scan_results)
 
 except KeyboardInterrupt:
-    print("\n[!] FangRecon interupted by user.")
+    print("\n[!] FangRecon interrupted by user.")
     print("Exiting...")
